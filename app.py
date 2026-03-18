@@ -269,7 +269,7 @@ def call_llm(client: OpenAI, prompt: str, temperature: float, model: str = "open
                 {"role": "user", "content": prompt}
             ],
             temperature=temperature,
-            max_tokens=1024,
+            max_tokens=512,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -301,7 +301,7 @@ def run_experiment(
         progress_bar.progress((i + 0.5) / n_runs, text=f"{progress_label} — run {i+1}/{n_runs}")
         result = call_llm(client, full_prompt, temperature, model)
         responses.append(result)
-        time.sleep(0.5)  # small delay to avoid rate-limit spikes
+        time.sleep(0.1)  # small delay to avoid rate-limit spikes
 
     progress_bar.progress(1.0, text=f"{progress_label} — done ✓")
     return responses
