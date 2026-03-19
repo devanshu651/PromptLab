@@ -1,212 +1,253 @@
 """
-Prompt Evaluation & Variability Testing Lab
-============================================
-An LLM experimentation tool to study how prompt structure and temperature
-affect the stability and variability of LLM responses.
-
->> Powered by DeepSeek API (OpenAI-compatible) <<
+PromptLab Pro — app.py
+========================
+Senior-grade Prompt Evaluation & Analysis System
+Powered by OpenRouter | Built with Streamlit
 """
-
 from __future__ import annotations
 
 import streamlit as st
-import os
-import time
-import math
-from openai import OpenAI
+import os, json, time
+from datetime import datetime
 from dotenv import load_dotenv
 
-# ── Optional: similarity scoring via sentence-transformers ──────────────────
-try:
-    from sentence_transformers import SentenceTransformer
-    import numpy as np
-    SIMILARITY_AVAILABLE = True
-except ImportError:
-    SIMILARITY_AVAILABLE = False
-
-# ── Page config ─────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Prompt Lab",
-    page_icon="⚗️",
-    layout="wide",
-    initial_sidebar_state="collapsed",
+# ── Local modules ────────────────────────────────────────────────────────────
+from modules.llm_client import get_client, call_llm
+from modules.analysis import (
+    consistency_score, hallucination_risk,
+    validate_json, length_stats, word_diff, compare_prompts,
 )
+from modules.export import (
+    to_json, to_csv, to_markdown, build_experiment_dict,
+)
+from modules.templates import TEMPLATES
 
+# ────────────────────────────────────────────────────────────────────────────
 load_dotenv()
 
-# ── Custom CSS ───────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="PromptLab Pro",
+    page_icon="⚗️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ── CSS ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
 
 :root {
-    --bg:        #0a0a0f;
-    --surface:   #111118;
-    --border:    #1e1e2e;
-    --accent-a:  #7c6af7;
-    --accent-b:  #f76a8a;
-    --accent-g:  #4af7b0;
-    --text:      #e8e8f0;
-    --muted:     #6b6b80;
-    --card:      #13131c;
+    --bg:       #07090f;
+    --surface:  #0d1017;
+    --card:     #111520;
+    --border:   #1c2333;
+    --a:        #4f9eff;
+    --b:        #ff6b9d;
+    --g:        #3effa0;
+    --y:        #ffd166;
+    --text:     #d0d8f0;
+    --muted:    #4a5580;
 }
 
 html, body, [class*="css"] {
-    font-family: 'Space Mono', monospace;
-    background-color: var(--bg) !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+    background: var(--bg) !important;
     color: var(--text) !important;
 }
+.stApp { background: var(--bg); }
 
-.stApp { background-color: var(--bg); }
-
-.lab-header {
-    text-align: center;
-    padding: 3rem 0 2rem;
+/* Header */
+.plp-header {
+    padding: 2rem 0 1.5rem;
     border-bottom: 1px solid var(--border);
-    margin-bottom: 2.5rem;
+    margin-bottom: 2rem;
 }
-.lab-title {
-    font-family: 'Syne', sans-serif;
-    font-size: 3rem;
-    font-weight: 800;
-    letter-spacing: -1px;
-    background: linear-gradient(135deg, var(--accent-a) 0%, var(--accent-b) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+.plp-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--a);
+    letter-spacing: -0.5px;
     margin: 0;
 }
-.lab-sub {
+.plp-sub {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
     color: var(--muted);
-    font-size: 0.8rem;
     letter-spacing: 3px;
     text-transform: uppercase;
-    margin-top: 0.5rem;
+    margin-top: 0.3rem;
 }
 
-.card {
+/* Section headers */
+.sec-head {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Cards */
+.pl-card {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 1rem;
+    border-radius: 8px;
+    padding: 1.2rem;
+    margin-bottom: 0.8rem;
 }
 
-.section-label {
-    font-family: 'Syne', sans-serif;
-    font-size: 0.7rem;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 1rem;
-}
-
-.badge-a { color: var(--accent-a); font-weight: 700; }
-.badge-b { color: var(--accent-b); font-weight: 700; }
-.badge-g { color: var(--accent-g); font-weight: 700; }
-
-.response-card {
+/* Response card */
+.resp-card {
     background: var(--surface);
-    border-left: 3px solid var(--accent-a);
-    border-radius: 0 8px 8px 0;
-    padding: 1rem 1.25rem;
-    margin: 0.6rem 0;
+    border-left: 3px solid var(--a);
+    padding: 1rem 1.2rem;
+    margin: 0.5rem 0;
+    border-radius: 0 6px 6px 0;
+    font-family: 'IBM Plex Sans', sans-serif;
     font-size: 0.82rem;
-    line-height: 1.7;
+    line-height: 1.75;
     white-space: pre-wrap;
     word-break: break-word;
-    animation: fadeIn 0.4s ease;
 }
-.response-card.b { border-left-color: var(--accent-b); }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.resp-card.b { border-left-color: var(--b); }
+.resp-card.error { border-left-color: #ff4444; opacity: 0.7; }
 
-.run-num {
-    font-size: 0.65rem;
+/* Run label */
+.run-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.6rem;
     letter-spacing: 2px;
     color: var(--muted);
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.4rem;
 }
 
-.metric-box {
+/* Metric box */
+.mbox {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 1.2rem 1rem;
+    border-radius: 6px;
+    padding: 1rem 0.8rem;
     text-align: center;
 }
-.metric-value {
-    font-family: 'Syne', sans-serif;
-    font-size: 1.8rem;
-    font-weight: 800;
+.mbox-val {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 1.5rem;
+    font-weight: 600;
     line-height: 1;
 }
-.metric-label {
-    font-size: 0.65rem;
+.mbox-lbl {
+    font-size: 0.6rem;
     letter-spacing: 2px;
     color: var(--muted);
     margin-top: 0.3rem;
     text-transform: uppercase;
 }
 
+/* Risk / consistency badges */
+.badge {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-weight: 600;
+}
+.badge-green  { background: rgba(62,255,160,0.12); color: var(--g); border: 1px solid rgba(62,255,160,0.3); }
+.badge-yellow { background: rgba(255,209,102,0.12); color: var(--y); border: 1px solid rgba(255,209,102,0.3); }
+.badge-red    { background: rgba(255,75,75,0.12); color: #ff6b6b; border: 1px solid rgba(255,75,75,0.3); }
+
+/* Diff */
+.diff-add { background: rgba(62,255,160,0.1); color: var(--g); padding: 0 3px; border-radius: 3px; }
+.diff-rem { background: rgba(255,107,157,0.1); color: var(--b); padding: 0 3px; border-radius: 3px; text-decoration: line-through; }
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background: var(--surface) !important;
+    border-right: 1px solid var(--border) !important;
+}
+
+/* Inputs */
 .stTextArea textarea, .stTextInput input {
     background: var(--surface) !important;
     border: 1px solid var(--border) !important;
     color: var(--text) !important;
-    border-radius: 8px !important;
-    font-family: 'Space Mono', monospace !important;
-    font-size: 0.82rem !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 0.8rem !important;
+    border-radius: 6px !important;
 }
-.stTextArea textarea:focus, .stTextInput input:focus {
-    border-color: var(--accent-a) !important;
-    box-shadow: 0 0 0 2px rgba(124,106,247,0.2) !important;
+.stTextArea textarea:focus {
+    border-color: var(--a) !important;
+    box-shadow: 0 0 0 2px rgba(79,158,255,0.15) !important;
 }
-label { color: var(--muted) !important; font-size: 0.72rem !important; letter-spacing: 1.5px !important; text-transform: uppercase !important; }
 
-.stSlider [data-baseweb="slider"] { padding-top: 0.5rem; }
-.stSlider [data-baseweb="thumb"] { background: var(--accent-a) !important; }
-.stSlider [data-baseweb="track-fill"] { background: var(--accent-a) !important; }
-
+/* Button */
 .stButton > button {
-    background: linear-gradient(135deg, var(--accent-a), var(--accent-b)) !important;
-    color: white !important;
+    background: var(--a) !important;
+    color: #07090f !important;
     border: none !important;
-    border-radius: 8px !important;
-    font-family: 'Syne', sans-serif !important;
-    font-weight: 700 !important;
-    font-size: 0.9rem !important;
-    letter-spacing: 1px !important;
-    padding: 0.7rem 2rem !important;
-    cursor: pointer !important;
-    transition: opacity 0.2s !important;
+    border-radius: 6px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-weight: 600 !important;
+    font-size: 0.85rem !important;
+    padding: 0.6rem 1.5rem !important;
     width: 100% !important;
+    transition: opacity 0.2s !important;
 }
 .stButton > button:hover { opacity: 0.85 !important; }
 
+/* Selectbox */
 .stSelectbox [data-baseweb="select"] > div {
     background: var(--surface) !important;
     border-color: var(--border) !important;
     color: var(--text) !important;
+    font-family: 'IBM Plex Mono', monospace !important;
 }
+
+label { color: var(--muted) !important; font-size: 0.68rem !important; letter-spacing: 2px !important; text-transform: uppercase !important; }
 
 div[data-testid="stExpander"] {
     background: var(--card) !important;
     border: 1px solid var(--border) !important;
-    border-radius: 10px !important;
+    border-radius: 8px !important;
 }
 
-.stAlert { border-radius: 8px !important; }
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] {
+    background: var(--surface) !important;
+    border-bottom: 1px solid var(--border) !important;
+    gap: 0 !important;
+}
+.stTabs [data-baseweb="tab"] {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 0.72rem !important;
+    letter-spacing: 1.5px !important;
+    color: var(--muted) !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+}
+.stTabs [aria-selected="true"] {
+    color: var(--a) !important;
+    border-bottom: 2px solid var(--a) !important;
+}
 
-.diff-added   { background: rgba(74,247,176,0.12); border-left: 3px solid var(--accent-g); padding: 0.3rem 0.6rem; margin: 0.3rem 0; border-radius: 0 4px 4px 0; font-size: 0.78rem; }
-.diff-removed { background: rgba(247,106,138,0.1);  border-left: 3px solid var(--accent-b); padding: 0.3rem 0.6rem; margin: 0.3rem 0; border-radius: 0 4px 4px 0; font-size: 0.78rem; }
-
-/* DeepSeek badge */
-.ds-badge {
+/* Meta tags */
+.meta-tag {
     display: inline-block;
-    background: linear-gradient(135deg, #4af7b0, #7c6af7);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-weight: 700;
-    font-size: 0.75rem;
-    letter-spacing: 2px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    margin-right: 0.4rem;
+    margin-bottom: 0.4rem;
 }
 
 #MainMenu, footer, header { visibility: hidden; }
@@ -216,390 +257,553 @@ div[data-testid="stExpander"] {
 
 # ── Header ───────────────────────────────────────────────────────────────────
 st.markdown("""
-<div class="lab-header">
-    <p class="lab-sub">⚗️ LLM Experimentation Tool</p>
-    <h1 class="lab-title">Prompt Evaluation Lab</h1>
-    <p class="lab-sub">Variability · Stability · Temperature Analysis</p>
-    <p class="lab-sub" style="margin-top:0.5rem">
-        <span class="ds-badge">⚡ Powered by DeepSeek</span>
-    </p>
+<div class="plp-header">
+    <p class="plp-sub">⚗️ Prompt Evaluation System</p>
+    <h1 class="plp-title">PromptLab Pro</h1>
+    <p class="plp-sub">Consistency · Hallucination Detection · Temperature Sweep · Export</p>
 </div>
 """, unsafe_allow_html=True)
 
 
-# ── API Client ───────────────────────────────────────────────────────────────
-def configure_api() -> OpenAI:
-    """
-    Initialize DeepSeek client using OpenAI SDK.
-    OpenRouter is fully OpenAI-compatible — free DeepSeek models available.
-    """
-    api_key = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        st.error(
-            "🔑 **OPENROUTER_API_KEY** not found.\n\n"
-            "**Setup karo:**\n"
-            "1. Jao → https://platform.deepseek.com\n"
-            "2. Sign up karo (free — 5M tokens milenge)\n"
-            "3. API Keys section mein nayi key banao\n"
-            "4. `.env` file mein likho: `OPENROUTER_API_KEY=your_key_here`"
-        )
-        st.stop()
+# ── Sidebar — Config ─────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown('<p class="sec-head">🎛️ Configuration</p>', unsafe_allow_html=True)
 
-    client = OpenAI(
-        api_key=api_key,
-        base_url="https://openrouter.ai/api/v1",
-        default_headers={
-            "HTTP-Referer": "http://localhost:8501",  # Required by OpenRouter
-            "X-Title": "Prompt Evaluation Lab",
-        },
-    )
-    return client
+    model = st.selectbox("Model", options=[
+        "openrouter/free",
+        "qwen/qwen-2.5-next-80b-a3b-instruct:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "openai/gpt-oss-120b:free",
+        "minimax/minimax-m2.5:free",
+    ])
 
-
-# ── Core: single LLM call ────────────────────────────────────────────────────
-def call_llm(client: OpenAI, prompt: str, temperature: float, model: str = "openrouter/free") -> str:
-    """
-    Send a single prompt to DeepSeek and return the response text.
-    Uses the standard OpenAI chat completions format.
-    """
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            temperature=temperature,
-            max_tokens=512,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"[ERROR] {str(e)}"
-
-
-# ── Core: run N experiments for a prompt ─────────────────────────────────────
-def run_experiment(
-    client: OpenAI,
-    prompt_template: str,
-    task: str,
-    temperature: float,
-    n_runs: int,
-    model: str,
-    progress_label: str,
-    progress_bar,
-) -> list[str]:
-    """
-    Substitute the task into the prompt template and call the LLM n_runs times.
-    Returns a list of response strings.
-    """
-    if "{task}" in prompt_template:
-        full_prompt = prompt_template.replace("{task}", task)
-    else:
-        full_prompt = f"{prompt_template}\n\nTask: {task}"
-
-    responses = []
-    for i in range(n_runs):
-        progress_bar.progress((i + 0.5) / n_runs, text=f"{progress_label} — run {i+1}/{n_runs}")
-        result = call_llm(client, full_prompt, temperature, model)
-        responses.append(result)
-        time.sleep(0.1)  # small delay to avoid rate-limit spikes
-
-    progress_bar.progress(1.0, text=f"{progress_label} — done ✓")
-    return responses
-
-
-# ── Metrics ──────────────────────────────────────────────────────────────────
-def compute_metrics(responses: list[str]) -> dict:
-    """Compute length-based statistics across a list of responses."""
-    lengths = [len(r.split()) for r in responses]
-    n = len(lengths)
-    mean = sum(lengths) / n
-    variance = sum((x - mean) ** 2 for x in lengths) / n
-    std_dev = math.sqrt(variance)
-    return {
-        "lengths":  lengths,
-        "mean":     round(mean, 1),
-        "variance": round(variance, 1),
-        "std_dev":  round(std_dev, 2),
-        "min":      min(lengths),
-        "max":      max(lengths),
-        "range":    max(lengths) - min(lengths),
-    }
-
-
-def compute_similarity(responses: list[str]) -> float | None:
-    """
-    Compute average pairwise cosine similarity using sentence-transformers.
-    Returns None if the library is not installed.
-    """
-    if not SIMILARITY_AVAILABLE or len(responses) < 2:
-        return None
-    try:
-        model = SentenceTransformer("all-MiniLM-L6-v2")
-        embeddings = model.encode(responses)
-        n = len(embeddings)
-        sims = []
-        for i in range(n):
-            for j in range(i + 1, n):
-                a, b = embeddings[i], embeddings[j]
-                cos = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
-                sims.append(cos)
-        return round(sum(sims) / len(sims), 4) if sims else None
-    except Exception:
-        return None
-
-
-def stability_rating(std_dev: float, mean: float) -> tuple[str, str]:
-    """Return a human-readable stability label and colour based on CV."""
-    if mean == 0:
-        return "N/A", "#6b6b80"
-    cv = std_dev / mean
-    if cv < 0.05:
-        return "Very Stable 🟢", "#4af7b0"
-    if cv < 0.15:
-        return "Stable 🟡", "#f7d96a"
-    if cv < 0.30:
-        return "Variable 🟠", "#f7a96a"
-    return "Highly Variable 🔴", "#f76a8a"
-
-
-# ── UI: Metrics display ───────────────────────────────────────────────────────
-def show_metrics(responses_a: list[str], responses_b: list[str]):
-    """Render the analytics summary section comparing both prompts."""
-    m_a = compute_metrics(responses_a)
-    m_b = compute_metrics(responses_b)
-    stab_a, col_a = stability_rating(m_a["std_dev"], m_a["mean"])
-    stab_b, col_b = stability_rating(m_b["std_dev"], m_b["mean"])
+    mode = st.radio("Experiment Mode", [
+        "🔁 Multi-Run Variability",
+        "🌡️ Temperature Sweep",
+        "🆚 Prompt Comparison",
+    ], index=0)
 
     st.markdown("---")
-    st.markdown('<p class="section-label">📊 Analytics Summary</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sec-head">⚙️ Parameters</p>', unsafe_allow_html=True)
 
-    col1, col2 = st.columns(2)
+    if mode == "🌡️ Temperature Sweep":
+        temps_input = st.text_input(
+            "Temperatures (comma-separated)",
+            value="0.0, 0.3, 0.7, 1.0, 1.5",
+            help="e.g. 0.0, 0.5, 1.0"
+        )
+        try:
+            temperatures = [float(x.strip()) for x in temps_input.split(",")]
+        except:
+            temperatures = [0.0, 0.7, 1.0]
+        n_runs = 1
+        temperature = 0.7
+    else:
+        temperature = st.slider("Temperature", 0.0, 2.0, 0.7, 0.05)
+        n_runs = st.select_slider("Runs per Prompt", options=[2, 3, 4, 5], value=3)
+        temperatures = [temperature]
 
-    for col, m, label, badge_class, color in [
-        (col1, m_a, "Prompt A", "badge-a", "#7c6af7"),
-        (col2, m_b, "Prompt B", "badge-b", "#f76a8a"),
+    max_tokens = st.slider("Max Tokens", 128, 1024, 512, 64)
+
+    st.markdown("---")
+    st.markdown('<p class="sec-head">🔧 Options</p>', unsafe_allow_html=True)
+
+    json_mode = st.toggle("Force JSON Output", value=False)
+    show_hallucination = st.toggle("Hallucination Heuristic", value=True)
+    show_diff = st.toggle("Show Word Diff", value=True)
+
+    st.markdown("---")
+    st.markdown('<p class="sec-head">📚 Template Library</p>', unsafe_allow_html=True)
+
+    template_choice = st.selectbox(
+        "Load Template",
+        options=["— Custom —"] + list(TEMPLATES.keys()),
+        index=0,
+    )
+
+
+# ── Load Template ─────────────────────────────────────────────────────────────
+selected_template = None
+if template_choice != "— Custom —":
+    selected_template = TEMPLATES[template_choice]
+
+
+# ── Main Input Area ───────────────────────────────────────────────────────────
+st.markdown('<p class="sec-head">📝 Inputs</p>', unsafe_allow_html=True)
+
+task = st.text_area(
+    "Task / Question",
+    value=selected_template["example_task"] if selected_template else "",
+    placeholder="e.g. What is recursion in programming?",
+    height=70,
+)
+
+if mode == "🔁 Multi-Run Variability":
+    prompt_a = st.text_area(
+        "Prompt Template (use {task} as placeholder)",
+        value=selected_template["template_a"] if selected_template else "",
+        placeholder="You are a teacher. Explain {task} step by step.",
+        height=120,
+    )
+    prompt_b = None
+elif mode == "🌡️ Temperature Sweep":
+    prompt_a = st.text_area(
+        "Prompt Template (use {task} as placeholder)",
+        value=selected_template["template_a"] if selected_template else "",
+        placeholder="Explain {task} clearly.",
+        height=120,
+    )
+    prompt_b = None
+else:  # Prompt Comparison
+    col_pa, col_pb = st.columns(2, gap="medium")
+    with col_pa:
+        prompt_a = st.text_area(
+            "Prompt A",
+            value=selected_template["template_a"] if selected_template else "",
+            placeholder="You are a teacher. Explain {task} step by step.",
+            height=120,
+        )
+    with col_pb:
+        prompt_b = st.text_area(
+            "Prompt B",
+            value=selected_template["template_b"] if selected_template else "",
+            placeholder="In one sentence, define {task}.",
+            height=120,
+        )
+
+run_btn = st.button("⚗️ Run Experiment", use_container_width=True)
+
+
+# ── Helper: build full prompt ─────────────────────────────────────────────────
+def build_prompt(template: str, task_text: str) -> str:
+    if "{task}" in template:
+        return template.replace("{task}", task_text)
+    return f"{template}\n\nTask: {task_text}"
+
+
+# ── Helper: render response card ─────────────────────────────────────────────
+def render_response(result: dict, run_idx: int, css_class: str = "a", temp: float | None = None):
+    label = f"RUN {run_idx + 1}"
+    if temp is not None:
+        label = f"TEMP {temp}"
+
+    if result.get("error"):
+        st.markdown(f"""
+        <div class="resp-card error">
+            <div class="run-label">{label} — ERROR</div>
+            {result['error']}
+        </div>""", unsafe_allow_html=True)
+        return
+
+    meta = f"{len(result['text'].split())} words · {result['latency_ms']}ms"
+    if result.get("tokens_completion"):
+        meta += f" · {result['tokens_completion']} tokens"
+
+    st.markdown(f"""
+    <div class="resp-card {css_class}">
+        <div class="run-label">{label} &nbsp;|&nbsp; {meta}</div>
+        {result['text']}
+    </div>""", unsafe_allow_html=True)
+
+
+# ── Helper: render metrics row ────────────────────────────────────────────────
+def render_metrics_row(stats: dict, cons: dict, color: str):
+    c1, c2, c3, c4, c5 = st.columns(5)
+    for col, val, lbl in [
+        (c1, stats["mean"],    "Avg Words"),
+        (c2, stats["std_dev"], "Std Dev"),
+        (c3, stats["range"],   "Range"),
+        (c4, f"{cons['score']}%", "Consistency"),
+        (c5, stats["stability"].split()[0], "Stability"),
     ]:
         with col:
-            st.markdown(
-                f'<p class="section-label"><span class="{badge_class}">{label}</span> — Word Count Stats</p>',
-                unsafe_allow_html=True,
-            )
-            c1, c2, c3, c4 = st.columns(4)
-            for c, val, lbl in [
-                (c1, m["mean"],    "Avg Words"),
-                (c2, m["std_dev"], "Std Dev"),
-                (c3, m["range"],   "Range"),
-                (c4, m["variance"],"Variance"),
-            ]:
-                with c:
-                    st.markdown(f"""
-                    <div class="metric-box">
-                        <div class="metric-value" style="color:{color}">{val}</div>
-                        <div class="metric-label">{lbl}</div>
-                    </div>""", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-value" style="color:{col_a}; font-size:1.3rem">{stab_a}</div>
-            <div class="metric-label">Prompt A — Stability Rating</div>
-        </div>""", unsafe_allow_html=True)
-    with c2:
-        st.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-value" style="color:{col_b}; font-size:1.3rem">{stab_b}</div>
-            <div class="metric-label">Prompt B — Stability Rating</div>
-        </div>""", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    sim_a = compute_similarity(responses_a)
-    sim_b = compute_similarity(responses_b)
-
-    cs1, cs2, cs3 = st.columns(3)
-    with cs1:
-        val = f"{sim_a:.3f}" if sim_a is not None else "N/A*"
-        st.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-value" style="color:#7c6af7">{val}</div>
-            <div class="metric-label">Prompt A — Avg Similarity</div>
-        </div>""", unsafe_allow_html=True)
-    with cs2:
-        val = f"{sim_b:.3f}" if sim_b is not None else "N/A*"
-        st.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-value" style="color:#f76a8a">{val}</div>
-            <div class="metric-label">Prompt B — Avg Similarity</div>
-        </div>""", unsafe_allow_html=True)
-    with cs3:
-        if sim_a is not None and sim_b is not None:
-            winner = "A" if sim_a > sim_b else ("B" if sim_b > sim_a else "Tie")
-            color  = "#7c6af7" if winner == "A" else ("#f76a8a" if winner == "B" else "#4af7b0")
             st.markdown(f"""
-            <div class="metric-box">
-                <div class="metric-value" style="color:{color}">Prompt {winner}</div>
-                <div class="metric-label">More Consistent</div>
-            </div>""", unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div class="metric-box">
-                <div class="metric-value" style="color:#6b6b80; font-size:0.8rem">Install sentence-transformers</div>
-                <div class="metric-label">for similarity scores</div>
+            <div class="mbox">
+                <div class="mbox-val" style="color:{color}">{val}</div>
+                <div class="mbox-lbl">{lbl}</div>
             </div>""", unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown('<p class="section-label">📈 Response Length Distribution</p>', unsafe_allow_html=True)
 
-    import pandas as pd
-    chart_data = {}
-    for i, la in enumerate(m_a["lengths"]):
-        chart_data[f"Run {i+1}"] = {"Prompt A": la, "Prompt B": m_b["lengths"][i]}
-    df = pd.DataFrame(chart_data).T
-    st.bar_chart(df, color=["#7c6af7", "#f76a8a"], height=220)
-
-
-# ── UI: Responses display ─────────────────────────────────────────────────────
-def show_responses(responses: list[str], label: str, css_class: str):
-    """Render all responses for one prompt in styled cards."""
-    badge = "badge-a" if css_class == "a" else "badge-b"
-    st.markdown(
-        f'<p class="section-label"><span class="{badge}">{label}</span> — {len(responses)} Runs</p>',
-        unsafe_allow_html=True,
-    )
-    for i, resp in enumerate(responses):
-        st.markdown(f"""
-        <div class="response-card {css_class}">
-            <div class="run-num">RUN {i+1}</div>
-            {resp}
-        </div>
-        """, unsafe_allow_html=True)
-
-
-# ── Main UI Layout ────────────────────────────────────────────────────────────
-st.markdown('<p class="section-label">⚙️ Experiment Configuration</p>', unsafe_allow_html=True)
-
-col_left, col_right = st.columns([3, 1], gap="large")
-
-with col_left:
-    task = st.text_area(
-        "TASK / QUESTION",
-        placeholder="e.g. Explain the concept of recursion in programming",
-        height=80,
-        help="The core question or task both prompts will try to answer.",
-    )
-
-    col_a, col_b = st.columns(2, gap="medium")
-    with col_a:
-        prompt_a = st.text_area(
-            "PROMPT TEMPLATE A",
-            placeholder="You are a teacher. Explain {task} step by step.",
-            height=160,
-            help="Use {task} as a placeholder — it will be replaced with your task above.",
-        )
-    with col_b:
-        prompt_b = st.text_area(
-            "PROMPT TEMPLATE B",
-            placeholder="In one paragraph, describe {task} simply.",
-            height=160,
-            help="Use {task} as a placeholder — it will be replaced with your task above.",
-        )
-
-with col_right:
-    st.markdown('<p class="section-label">🎛️ Parameters</p>', unsafe_allow_html=True)
-
-    temperature = st.slider(
-        "TEMPERATURE",
-        min_value=0.0, max_value=2.0, value=0.7, step=0.05,
-        help="Higher = more random/creative. Lower = more deterministic.",
-    )
-    n_runs = st.select_slider(
-        "NUMBER OF RUNS",
-        options=[2, 3, 4, 5],
-        value=3,
-        help="How many times to run each prompt.",
-    )
-
-    # ── Free models on OpenRouter ────────────────────────────────────────
-    model = st.selectbox(
-        "MODEL",
-        options=[
-            "openrouter/free",                                    # Auto best free ✅
-            "qwen/qwen-2.5-next-80b-a3b-instruct:free",          # Qwen 2.5 80B ✅
-            "nvidia/nemotron-3-super-120b-a12b:free",             # Nvidia 120B ✅
-            "openai/gpt-oss-120b:free",                           # GPT OSS 120B ✅
-            "minimax/minimax-m2.5:free",                          # MiniMax ✅
-        ],
-        index=0,
-        help=(
-            "deepseek/deepseek-r1:free → Best for reasoning tasks\n"
-            "meta-llama/llama-3.3-70b-instruct:free → Fast general purpose\n"
-            "google/gemini-2.0-flash-exp:free → Google Gemini free\n"
-            "openrouter/auto → Automatically picks best free model"
-        ),
-    )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    run_btn = st.button("⚗️ Run Experiment", use_container_width=True)
-
-
-# ─ Run & Display ─────────────────────────────────────────────────────────────
+# ── RUN ───────────────────────────────────────────────────────────────────────
 if run_btn:
     if not task.strip():
-        st.warning("⚠️ Please enter a task/question.")
+        st.warning("⚠️ Enter a task/question first.")
         st.stop()
-    if not prompt_a.strip() or not prompt_b.strip():
-        st.warning("⚠️ Please fill in both Prompt Template A and B.")
+    if not prompt_a or not prompt_a.strip():
+        st.warning("⚠️ Enter a prompt template.")
+        st.stop()
+    if mode == "🆚 Prompt Comparison" and (not prompt_b or not prompt_b.strip()):
+        st.warning("⚠️ Enter Prompt B for comparison mode.")
         st.stop()
 
-    client = configure_api()
+    client = get_client()
+
+    # Experiment metadata
+    exp_meta = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "model": model,
+        "temperature": temperature,
+        "n_runs": n_runs,
+        "mode": mode,
+        "task": task,
+    }
 
     st.markdown("---")
-    st.markdown('<p class="section-label">🔬 Running Experiment…</p>', unsafe_allow_html=True)
-
-    pb_a = st.progress(0, text="Prompt A — starting…")
-    responses_a = run_experiment(client, prompt_a, task, temperature, n_runs, model, "Prompt A", pb_a)
-
-    pb_b = st.progress(0, text="Prompt B — starting…")
-    responses_b = run_experiment(client, prompt_b, task, temperature, n_runs, model, "Prompt B", pb_b)
-
-    # ── Results ──────────────────────────────────────────────────────────
-    st.markdown("---")
-    st.markdown('<p class="section-label">📋 Results</p>', unsafe_allow_html=True)
-
-    res_col_a, res_col_b = st.columns(2, gap="large")
-    with res_col_a:
-        show_responses(responses_a, "Prompt A", "a")
-    with res_col_b:
-        show_responses(responses_b, "Prompt B", "b")
-
-    # ── Analytics ────────────────────────────────────────────────────────
-    show_metrics(responses_a, responses_b)
-
-    # ── Expandable: raw diff ──────────────────────────────────────────────
+    # Metadata tags
+    st.markdown(
+        f'<span class="meta-tag">🤖 {model}</span>'
+        f'<span class="meta-tag">🌡️ temp={temperature}</span>'
+        f'<span class="meta-tag">🔁 runs={n_runs}</span>'
+        f'<span class="meta-tag">📅 {exp_meta["timestamp"]}</span>'
+        + ('<span class="meta-tag">📋 JSON mode</span>' if json_mode else ""),
+        unsafe_allow_html=True,
+    )
     st.markdown("<br>", unsafe_allow_html=True)
-    with st.expander("🔍 First Response Diff (A vs B)"):
-        if responses_a and responses_b:
-            import difflib
-            diff = list(difflib.unified_diff(
-                responses_a[0].split(),
-                responses_b[0].split(),
-                lineterm="", n=0,
-            ))
-            if diff:
-                for line in diff[2:]:
-                    if line.startswith("+"):
-                        st.markdown(f'<div class="diff-added">+ {line[1:]}</div>', unsafe_allow_html=True)
-                    elif line.startswith("-"):
-                        st.markdown(f'<div class="diff-removed">- {line[1:]}</div>', unsafe_allow_html=True)
+
+    # ── MODE: Multi-Run Variability ──────────────────────────────────────
+    if mode == "🔁 Multi-Run Variability":
+        st.markdown('<p class="sec-head">🔬 Running Experiment</p>', unsafe_allow_html=True)
+        full_prompt = build_prompt(prompt_a, task)
+        pb = st.progress(0, text="Running…")
+        results = []
+        for i in range(n_runs):
+            pb.progress((i + 0.5) / n_runs, text=f"Run {i+1}/{n_runs}…")
+            r = call_llm(client, full_prompt, model, temperature, max_tokens, json_mode)
+            results.append(r)
+            time.sleep(0.1)
+        pb.progress(1.0, text="Done ✓")
+
+        texts = [r["text"] for r in results if not r["error"]]
+
+        # ── Tabs: Raw / Analysis / Diff ──────────────────────────────
+        tab1, tab2, tab3 = st.tabs(["📋 Raw Outputs", "📊 Analysis", "🔍 Diff Viewer"])
+
+        with tab1:
+            st.markdown('<p class="sec-head">Raw Outputs</p>', unsafe_allow_html=True)
+            for i, r in enumerate(results):
+                render_response(r, i, "a")
+
+                if json_mode and not r["error"]:
+                    jv = validate_json(r["text"])
+                    badge_cls = "badge-green" if jv["valid"] else "badge-red"
+                    badge_txt = "✓ Valid JSON" if jv["valid"] else f"✗ Invalid JSON — {jv['error']}"
+                    st.markdown(f'<span class="badge {badge_cls}">{badge_txt}</span>', unsafe_allow_html=True)
+
+        with tab2:
+            st.markdown('<p class="sec-head">Metrics</p>', unsafe_allow_html=True)
+            if texts:
+                stats  = length_stats(texts)
+                cons   = consistency_score(texts)
+                render_metrics_row(stats, cons, "#4f9eff")
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"""
+                    <div class="mbox">
+                        <div class="mbox-val" style="color:#4f9eff;font-size:1rem">{cons['label']}</div>
+                        <div class="mbox-lbl">Consistency Rating</div>
+                    </div>""", unsafe_allow_html=True)
+                with c2:
+                    st.markdown(f"""
+                    <div class="mbox">
+                        <div class="mbox-val" style="color:#4f9eff;font-size:1rem">{stats['stability']}</div>
+                        <div class="mbox-lbl">Stability Rating</div>
+                    </div>""", unsafe_allow_html=True)
+
+                # Hallucination per run
+                if show_hallucination:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown('<p class="sec-head">⚠️ Hallucination Risk (per run)</p>', unsafe_allow_html=True)
+                    for i, t in enumerate(texts):
+                        hr = hallucination_risk(t)
+                        cls = "badge-green" if "Low" in hr["level"] else ("badge-yellow" if "Medium" in hr["level"] else "badge-red")
+                        st.markdown(f'**Run {i+1}:** <span class="badge {cls}">{hr["level"]}</span> (score: {hr["score"]})', unsafe_allow_html=True)
+                        if hr["flags"]:
+                            with st.expander(f"Run {i+1} flags"):
+                                for f in hr["flags"]:
+                                    st.markdown(f"- {f}")
+
+                # Length distribution chart
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown('<p class="sec-head">📈 Length Distribution</p>', unsafe_allow_html=True)
+                import pandas as pd
+                df = pd.DataFrame({"Words": stats["lengths"]}, index=[f"Run {i+1}" for i in range(len(stats["lengths"]))])
+                st.bar_chart(df, color="#4f9eff", height=180)
+
+        with tab3:
+            if show_diff and len(texts) >= 2:
+                st.markdown('<p class="sec-head">Word-level Diff: Run 1 vs Run 2</p>', unsafe_allow_html=True)
+                diff = word_diff(texts[0], texts[1])
+                html_parts = []
+                for chunk in diff:
+                    if chunk["type"] == "equal":
+                        html_parts.append(chunk["text"])
+                    elif chunk["type"] == "added":
+                        html_parts.append(f'<span class="diff-add">{chunk["text"]}</span>')
+                    elif chunk["type"] == "removed":
+                        html_parts.append(f'<span class="diff-rem">{chunk["text"]}</span>')
+                st.markdown(
+                    f'<div class="pl-card" style="font-size:0.82rem;line-height:1.8">{" ".join(html_parts)}</div>',
+                    unsafe_allow_html=True
+                )
             else:
-                st.info("Responses are identical (word-level).")
+                st.info("Need at least 2 successful runs for diff view.")
+
+        # Store for export
+        st.session_state["last_experiment"] = {
+            "mode": mode,
+            "metadata": exp_meta,
+            "prompt_a": prompt_a,
+            "prompt_b": "",
+            "results_a": results,
+            "results_b": [],
+            "texts_a": texts,
+            "texts_b": [],
+        }
+
+    # ── MODE: Temperature Sweep ──────────────────────────────────────────
+    elif mode == "🌡️ Temperature Sweep":
+        st.markdown('<p class="sec-head">🌡️ Temperature Sweep Results</p>', unsafe_allow_html=True)
+        full_prompt = build_prompt(prompt_a, task)
+
+        sweep_results = {}
+        pb = st.progress(0, text="Starting sweep…")
+        for ti, temp in enumerate(temperatures):
+            pb.progress((ti + 0.5) / len(temperatures), text=f"Temperature {temp}…")
+            r = call_llm(client, full_prompt, model, temp, max_tokens, json_mode)
+            sweep_results[temp] = r
+            time.sleep(0.1)
+        pb.progress(1.0, text="Sweep complete ✓")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        for temp, r in sweep_results.items():
+            col_temp, col_resp = st.columns([1, 5], gap="medium")
+            with col_temp:
+                color = "#4f9eff" if temp <= 0.5 else ("#ffd166" if temp <= 1.0 else "#ff6b9d")
+                st.markdown(f"""
+                <div class="mbox" style="margin-top:0.5rem">
+                    <div class="mbox-val" style="color:{color}">{temp}</div>
+                    <div class="mbox-lbl">temp</div>
+                    <div style="color:{color};font-size:0.65rem;margin-top:0.3rem">
+                        {"deterministic" if temp == 0 else ("balanced" if temp <= 0.7 else "creative")}
+                    </div>
+                </div>""", unsafe_allow_html=True)
+            with col_resp:
+                render_response(r, 0, "a", temp=temp)
+
+        # Sweep analysis
+        valid_texts = {t: r["text"] for t, r in sweep_results.items() if not r.get("error")}
+        if len(valid_texts) >= 2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown('<p class="sec-head">📊 Sweep Analysis</p>', unsafe_allow_html=True)
+            import pandas as pd
+            lengths_by_temp = {str(t): len(txt.split()) for t, txt in valid_texts.items()}
+            df = pd.DataFrame({"Words": list(lengths_by_temp.values())}, index=list(lengths_by_temp.keys()))
+            st.bar_chart(df, color="#4f9eff", height=180)
+
+    # ── MODE: Prompt Comparison ──────────────────────────────────────────
+    else:
+        st.markdown('<p class="sec-head">🔬 Running Comparison</p>', unsafe_allow_html=True)
+        full_a = build_prompt(prompt_a, task)
+        full_b = build_prompt(prompt_b, task)
+
+        results_a, results_b = [], []
+        pb_a = st.progress(0, text="Prompt A…")
+        for i in range(n_runs):
+            pb_a.progress((i + 0.5) / n_runs, text=f"Prompt A — run {i+1}/{n_runs}")
+            results_a.append(call_llm(client, full_a, model, temperature, max_tokens, json_mode))
+            time.sleep(0.1)
+        pb_a.progress(1.0, text="Prompt A done ✓")
+
+        pb_b = st.progress(0, text="Prompt B…")
+        for i in range(n_runs):
+            pb_b.progress((i + 0.5) / n_runs, text=f"Prompt B — run {i+1}/{n_runs}")
+            results_b.append(call_llm(client, full_b, model, temperature, max_tokens, json_mode))
+            time.sleep(0.1)
+        pb_b.progress(1.0, text="Prompt B done ✓")
+
+        texts_a = [r["text"] for r in results_a if not r.get("error")]
+        texts_b = [r["text"] for r in results_b if not r.get("error")]
+
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "📋 Raw Outputs", "📊 Metrics", "🏆 Comparison Summary", "🔍 Diff"
+        ])
+
+        with tab1:
+            col_a, col_b = st.columns(2, gap="large")
+            with col_a:
+                st.markdown('<p class="sec-head" style="color:#4f9eff">Prompt A</p>', unsafe_allow_html=True)
+                for i, r in enumerate(results_a):
+                    render_response(r, i, "a")
+            with col_b:
+                st.markdown('<p class="sec-head" style="color:#ff6b9d">Prompt B</p>', unsafe_allow_html=True)
+                for i, r in enumerate(results_b):
+                    render_response(r, i, "b")
+
+        with tab2:
+            if texts_a and texts_b:
+                stats_a = length_stats(texts_a)
+                stats_b = length_stats(texts_b)
+                cons_a  = consistency_score(texts_a)
+                cons_b  = consistency_score(texts_b)
+
+                st.markdown('<p class="sec-head" style="color:#4f9eff">Prompt A Metrics</p>', unsafe_allow_html=True)
+                render_metrics_row(stats_a, cons_a, "#4f9eff")
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown('<p class="sec-head" style="color:#ff6b9d">Prompt B Metrics</p>', unsafe_allow_html=True)
+                render_metrics_row(stats_b, cons_b, "#ff6b9d")
+
+                # Hallucination
+                if show_hallucination:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown('<p class="sec-head">⚠️ Hallucination Risk</p>', unsafe_allow_html=True)
+                    c1, c2 = st.columns(2)
+                    for col, texts, label, color in [
+                        (c1, texts_a, "Prompt A", "#4f9eff"),
+                        (c2, texts_b, "Prompt B", "#ff6b9d"),
+                    ]:
+                        with col:
+                            avg_risk = sum(hallucination_risk(t)["score"] for t in texts) / len(texts)
+                            level = "Low Risk 🟢" if avg_risk < 25 else ("Medium Risk 🟡" if avg_risk < 55 else "High Risk 🔴")
+                            cls = "badge-green" if avg_risk < 25 else ("badge-yellow" if avg_risk < 55 else "badge-red")
+                            st.markdown(f"""
+                            <div class="mbox">
+                                <div class="mbox-val" style="color:{color};font-size:1rem">{level}</div>
+                                <div class="mbox-lbl">{label} Avg Risk Score: {round(avg_risk)}</div>
+                            </div>""", unsafe_allow_html=True)
+
+                # Length chart
+                st.markdown("<br>", unsafe_allow_html=True)
+                import pandas as pd
+                chart = {}
+                for i in range(min(len(stats_a["lengths"]), len(stats_b["lengths"]))):
+                    chart[f"Run {i+1}"] = {"Prompt A": stats_a["lengths"][i], "Prompt B": stats_b["lengths"][i]}
+                df = pd.DataFrame(chart).T
+                st.bar_chart(df, color=["#4f9eff", "#ff6b9d"], height=200)
+
+        with tab3:
+            st.markdown('<p class="sec-head">🏆 Which Prompt Performed Better?</p>', unsafe_allow_html=True)
+            if texts_a and texts_b:
+                summary = compare_prompts(texts_a, texts_b, "Prompt A", "Prompt B")
+                st.markdown(f'<div class="pl-card">{summary}</div>', unsafe_allow_html=True)
+
+                # Detailed verdict
+                cons_a = consistency_score(texts_a)
+                cons_b = consistency_score(texts_b)
+                stats_a = length_stats(texts_a)
+                stats_b = length_stats(texts_b)
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                verdicts = []
+                if cons_a["score"] > cons_b["score"]:
+                    verdicts.append("✅ **Prompt A** is more consistent across runs")
+                else:
+                    verdicts.append("✅ **Prompt B** is more consistent across runs")
+
+                if stats_a["mean"] > stats_b["mean"]:
+                    verdicts.append("📝 **Prompt A** produces more detailed responses")
+                else:
+                    verdicts.append("📝 **Prompt B** produces more detailed responses")
+
+                if stats_a["std_dev"] < stats_b["std_dev"]:
+                    verdicts.append("📐 **Prompt A** has more predictable length")
+                else:
+                    verdicts.append("📐 **Prompt B** has more predictable length")
+
+                for v in verdicts:
+                    st.markdown(v)
+
+        with tab4:
+            if show_diff and texts_a and texts_b:
+                st.markdown('<p class="sec-head">Word-level Diff: Prompt A Run 1 vs Prompt B Run 1</p>', unsafe_allow_html=True)
+                diff = word_diff(texts_a[0], texts_b[0])
+                html_parts = []
+                for chunk in diff:
+                    if chunk["type"] == "equal":
+                        html_parts.append(chunk["text"])
+                    elif chunk["type"] == "added":
+                        html_parts.append(f'<span class="diff-add">{chunk["text"]}</span>')
+                    elif chunk["type"] == "removed":
+                        html_parts.append(f'<span class="diff-rem">{chunk["text"]}</span>')
+                st.markdown(
+                    f'<div class="pl-card" style="font-size:0.82rem;line-height:1.8">{" ".join(html_parts)}</div>',
+                    unsafe_allow_html=True
+                )
+
+        # Store for export
+        st.session_state["last_experiment"] = {
+            "mode": mode,
+            "metadata": exp_meta,
+            "prompt_a": prompt_a,
+            "prompt_b": prompt_b,
+            "results_a": results_a,
+            "results_b": results_b,
+            "texts_a": texts_a,
+            "texts_b": texts_b,
+        }
+
+    # ── Export Section ────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown('<p class="sec-head">📤 Export Results</p>', unsafe_allow_html=True)
+
+    exp = st.session_state.get("last_experiment", {})
+    if exp:
+        texts_a = exp.get("texts_a", [])
+        texts_b = exp.get("texts_b", [])
+
+        stats_a  = length_stats(texts_a) if texts_a else {}
+        stats_b  = length_stats(texts_b) if texts_b else {}
+        cons_a   = consistency_score(texts_a) if texts_a else {"score": 0, "label": "N/A"}
+        cons_b   = consistency_score(texts_b) if texts_b else {"score": 0, "label": "N/A"}
+
+        exp_dict = build_experiment_dict(
+            prompt_a=exp.get("prompt_a", ""),
+            prompt_b=exp.get("prompt_b", ""),
+            task=task,
+            model=model,
+            temperature=temperature,
+            n_runs=n_runs,
+            responses_a=exp.get("results_a", []),
+            responses_b=exp.get("results_b", []),
+            metrics_a=stats_a,
+            metrics_b=stats_b,
+            consistency_a=cons_a,
+            consistency_b=cons_b,
+        )
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.download_button(
+                "⬇️ Export JSON",
+                data=to_json(exp_dict),
+                file_name=f"promptlab_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+        with c2:
+            st.download_button(
+                "⬇️ Export CSV",
+                data=to_csv(exp_dict),
+                file_name=f"promptlab_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        with c3:
+            st.download_button(
+                "⬇️ Export Markdown",
+                data=to_markdown(exp_dict),
+                file_name=f"promptlab_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                mime="text/markdown",
+                use_container_width=True,
+            )
 
 
-# ─ Footer ────────────────────────────────────────────────────────────────────
+# ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <br><br>
-<p style="text-align:center;color:#2a2a3a;font-size:0.7rem;letter-spacing:2px">
-PROMPT EVALUATION LAB · POWERED BY OPENROUTER + DEEPSEEK · BUILT WITH STREAMLIT
+<p style="text-align:center;color:#1c2333;font-family:'IBM Plex Mono',monospace;font-size:0.65rem;letter-spacing:2px">
+PROMPTLAB PRO · OPENROUTER · STREAMLIT
 </p>
 """, unsafe_allow_html=True)
