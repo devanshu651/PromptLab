@@ -1,12 +1,62 @@
 """
-modules/export.py
-──────────────────
-Export experiment results as JSON, CSV, or Markdown.
+modules/export.py  — v3
+────────────────────────
+Export results as JSON / CSV / Markdown.
+Save & load experiment configurations for reproducibility.
 """
 from __future__ import annotations
 import json, csv, io
 from datetime import datetime
 
+APP_VERSION = "3.0.0"
+
+
+# ── Config save/load ─────────────────────────────────────────────────────────
+
+def save_config(
+    prompt_a: str,
+    prompt_b: str,
+    task: str,
+    model: str,
+    temperature: float,
+    n_runs: int,
+    max_tokens: int,
+    temperatures: list[float],
+    json_mode: bool,
+    mode: str,
+) -> str:
+    """Serialize experiment config to JSON string."""
+    config = {
+        "app_version" : APP_VERSION,
+        "timestamp"   : datetime.now().isoformat(),
+        "mode"        : mode,
+        "task"        : task,
+        "prompt_a"    : prompt_a,
+        "prompt_b"    : prompt_b,
+        "model"       : model,
+        "temperature" : temperature,
+        "temperatures": temperatures,
+        "n_runs"      : n_runs,
+        "max_tokens"  : max_tokens,
+        "json_mode"   : json_mode,
+    }
+    return json.dumps(config, indent=2)
+
+
+def load_config(json_str: str) -> dict:
+    """Deserialize config from JSON string. Returns dict or raises ValueError."""
+    try:
+        cfg = json.loads(json_str)
+        required = ["prompt_a", "model", "temperature", "n_runs"]
+        for key in required:
+            if key not in cfg:
+                raise ValueError(f"Missing required key: {key}")
+        return cfg
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON: {e}")
+
+
+# ── Result exports ────────────────────────────────────────────────────────────
 
 def to_json(experiment: dict) -> str:
     return json.dumps(experiment, indent=2, ensure_ascii=False)
@@ -14,17 +64,19 @@ def to_json(experiment: dict) -> str:
 
 def to_csv(experiment: dict) -> str:
     output = io.StringIO()
-    writer = csv.writer(output)
-
-    writer.writerow(["Prompt", "Run", "Temperature", "Words", "Latency(ms)", "Response"])
-    for entry in experiment.get("runs", []):
-        writer.writerow([
-            entry.get("prompt_label", ""),
-            entry.get("run_index", ""),
-            entry.get("temperature", ""),
-            entry.get("word_count", ""),
-            entry.get("latency_ms", ""),
-            entry.get("text", "").replace("\n", " "),
+    w = csv.writer(output)
+    w.writerow(["prompt_label", "run", "temperature", "words",
+                "latency_ms", "tokens_completion", "error", "text"])
+    for r in experiment.get("runs", []):
+        w.writerow([
+            r.get("prompt_label", ""),
+            r.get("run_index", ""),
+            r.get("temperature", ""),
+            r.get("word_count", ""),
+            r.get("latency_ms", ""),
+            r.get("tokens_completion", ""),
+            r.get("error", ""),
+            r.get("text", "").replace("\n", " "),
         ])
     return output.getvalue()
 
@@ -32,39 +84,43 @@ def to_csv(experiment: dict) -> str:
 def to_markdown(experiment: dict) -> str:
     meta = experiment.get("metadata", {})
     lines = [
-        "# PromptLab Experiment Report",
+        "# PromptLab Pro — Experiment Report",
         "",
-        f"**Generated:** {meta.get('timestamp', datetime.now().isoformat())}",
-        f"**Model:** `{meta.get('model', 'N/A')}`",
-        f"**Temperature:** {meta.get('temperature', 'N/A')}",
-        f"**Runs:** {meta.get('n_runs', 'N/A')}",
+        f"| Field | Value |",
+        f"|---|---|",
+        f"| **Generated** | {meta.get('timestamp', '')} |",
+        f"| **Model** | `{meta.get('model', '')}` |",
+        f"| **Temperature** | {meta.get('temperature', '')} |",
+        f"| **Runs** | {meta.get('n_runs', '')} |",
+        f"| **Mode** | {meta.get('mode', '')} |",
+        f"| **App Version** | {meta.get('app_version', APP_VERSION)} |",
         "",
         "---",
         "",
     ]
 
-    # Prompts
     for key in ["prompt_a", "prompt_b"]:
-        if key in experiment:
+        if experiment.get(key):
             label = "Prompt A" if key == "prompt_a" else "Prompt B"
-            lines += [f"## {label}", "", f"```", experiment[key], "```", ""]
+            lines += [f"## {label}", "", "```", experiment[key], "```", ""]
 
-    # Results
-    for entry in experiment.get("runs", []):
+    lines += ["## Raw Outputs", ""]
+    for r in experiment.get("runs", []):
         lines += [
-            f"### {entry.get('prompt_label')} — Run {entry.get('run_index', '')+1}",
+            f"### {r.get('prompt_label')} — Run {r.get('run_index', 0)+1}",
+            f"*{r.get('word_count')} words · {r.get('latency_ms')}ms*",
             "",
-            f"*Words: {entry.get('word_count')} | Latency: {entry.get('latency_ms')}ms*",
-            "",
-            entry.get("text", ""),
+            r.get("text", ""),
             "",
             "---",
             "",
         ]
 
-    # Metrics
+    if experiment.get("ai_summary"):
+        lines += ["## AI-Generated Analysis", "", experiment["ai_summary"], ""]
+
     if "metrics" in experiment:
-        lines += ["## Metrics Summary", ""]
+        lines += ["## Metrics", ""]
         for k, v in experiment["metrics"].items():
             lines.append(f"- **{k}:** {v}")
 
@@ -72,70 +128,60 @@ def to_markdown(experiment: dict) -> str:
 
 
 def build_experiment_dict(
-    prompt_a: str,
-    prompt_b: str,
-    task: str,
-    model: str,
-    temperature: float,
-    n_runs: int,
-    responses_a: list[dict],
-    responses_b: list[dict],
-    metrics_a: dict,
-    metrics_b: dict,
-    consistency_a: dict,
-    consistency_b: dict,
+    prompt_a, prompt_b, task, model, temperature,
+    n_runs, responses_a, responses_b,
+    metrics_a, metrics_b, di_a, di_b,
+    ai_summary: str = "",
+    mode: str = "",
 ) -> dict:
-    """Assemble all experiment data into one serializable dict."""
-    now = datetime.now().isoformat()
     runs = []
-
     for i, r in enumerate(responses_a):
         runs.append({
-            "prompt_label": "Prompt A",
-            "run_index": i,
-            "temperature": temperature,
-            "text": r.get("text", ""),
-            "word_count": len(r.get("text", "").split()),
-            "latency_ms": r.get("latency_ms", 0),
-            "tokens_prompt": r.get("tokens_prompt", 0),
-            "tokens_completion": r.get("tokens_completion", 0),
-            "error": r.get("error"),
+            "prompt_label"      : "Prompt A",
+            "run_index"         : i,
+            "temperature"       : temperature,
+            "text"              : r.get("text", ""),
+            "word_count"        : len(r.get("text", "").split()),
+            "latency_ms"        : r.get("latency_ms", 0),
+            "tokens_prompt"     : r.get("tokens_prompt", 0),
+            "tokens_completion" : r.get("tokens_completion", 0),
+            "error"             : r.get("error"),
         })
-
     for i, r in enumerate(responses_b):
         runs.append({
-            "prompt_label": "Prompt B",
-            "run_index": i,
-            "temperature": temperature,
-            "text": r.get("text", ""),
-            "word_count": len(r.get("text", "").split()),
-            "latency_ms": r.get("latency_ms", 0),
-            "tokens_prompt": r.get("tokens_prompt", 0),
-            "tokens_completion": r.get("tokens_completion", 0),
-            "error": r.get("error"),
+            "prompt_label"      : "Prompt B",
+            "run_index"         : i,
+            "temperature"       : temperature,
+            "text"              : r.get("text", ""),
+            "word_count"        : len(r.get("text", "").split()),
+            "latency_ms"        : r.get("latency_ms", 0),
+            "tokens_prompt"     : r.get("tokens_prompt", 0),
+            "tokens_completion" : r.get("tokens_completion", 0),
+            "error"             : r.get("error"),
         })
 
     return {
         "metadata": {
-            "timestamp": now,
-            "model": model,
+            "timestamp"  : datetime.now().isoformat(),
+            "model"      : model,
             "temperature": temperature,
-            "n_runs": n_runs,
-            "task": task,
+            "n_runs"     : n_runs,
+            "task"       : task,
+            "mode"       : mode,
+            "app_version": APP_VERSION,
         },
-        "prompt_a": prompt_a,
-        "prompt_b": prompt_b,
-        "runs": runs,
+        "prompt_a"  : prompt_a,
+        "prompt_b"  : prompt_b,
+        "runs"      : runs,
+        "ai_summary": ai_summary,
         "metrics": {
-            "prompt_a_avg_words": metrics_a.get("mean"),
-            "prompt_a_std_dev": metrics_a.get("std_dev"),
-            "prompt_a_stability": metrics_a.get("stability"),
-            "prompt_a_consistency": consistency_a.get("score"),
-            "prompt_a_consistency_label": consistency_a.get("label"),
-            "prompt_b_avg_words": metrics_b.get("mean"),
-            "prompt_b_std_dev": metrics_b.get("std_dev"),
-            "prompt_b_stability": metrics_b.get("stability"),
-            "prompt_b_consistency": consistency_b.get("score"),
-            "prompt_b_consistency_label": consistency_b.get("label"),
+            "A_avg_words"        : metrics_a.get("mean"),
+            "A_std_dev"          : metrics_a.get("std_dev"),
+            "A_determinism_index": di_a.get("di"),
+            "A_stability"        : di_a.get("label"),
+            "B_avg_words"        : metrics_b.get("mean"),
+            "B_std_dev"          : metrics_b.get("std_dev"),
+            "B_determinism_index": di_b.get("di"),
+            "B_stability"        : di_b.get("label"),
         },
     }

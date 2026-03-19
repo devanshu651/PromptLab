@@ -1,45 +1,44 @@
 """
-modules/templates.py
-─────────────────────
-Built-in prompt template library.
-Each template has: name, category, template_a, template_b, example_task
+modules/templates.py  — v3
+───────────────────────────
+Research-grade prompt template library.
 """
 
-TEMPLATES = {
-    "QA — Teacher vs Direct": {
-        "category": "Question Answering",
-        "template_a": "You are an expert teacher. Explain {task} step by step, with examples, suitable for a beginner.",
-        "template_b": "Answer this question concisely in 2-3 sentences: {task}",
+TEMPLATES: dict[str, dict] = {
+    "QA — Teacher vs Concise": {
+        "category"    : "Question Answering",
+        "template_a"  : "You are an expert. Explain the following clearly and step by step, with examples: {task}",
+        "template_b"  : "Answer in 2-3 sentences only. Be precise: {task}",
         "example_task": "What is recursion in programming?",
     },
-    "Summarization — Detailed vs Bullet": {
-        "category": "Summarization",
-        "template_a": "Write a comprehensive summary of the following topic in 3 paragraphs: {task}",
-        "template_b": "Summarize the following in exactly 5 bullet points. Be concise: {task}",
-        "example_task": "The impact of artificial intelligence on the job market",
+    "Summarization — Paragraph vs Bullets": {
+        "category"    : "Summarization",
+        "template_a"  : "Write a 3-paragraph summary of: {task}",
+        "template_b"  : "Summarize in exactly 5 bullet points: {task}",
+        "example_task": "The impact of large language models on software engineering",
     },
-    "Extraction — Structured vs Freeform": {
-        "category": "Extraction",
-        "template_a": "Extract all key information from the following and return it as valid JSON with keys: topic, main_points, conclusion. Input: {task}",
-        "template_b": "Read the following and list the key facts: {task}",
-        "example_task": "Python is a high-level, interpreted programming language known for its clear syntax and readability. Created by Guido van Rossum and first released in 1991, Python supports multiple programming paradigms including procedural, object-oriented, and functional programming.",
+    "Extraction — JSON vs Freeform": {
+        "category"    : "Extraction",
+        "template_a"  : 'Extract key information and return ONLY valid JSON with keys: "topic", "key_points" (array), "conclusion". Input: {task}',
+        "template_b"  : "Extract and list the key facts from: {task}",
+        "example_task": "Python is a high-level interpreted language created by Guido van Rossum in 1991. It supports OOP, functional, and procedural paradigms and is widely used in data science, web development, and automation.",
     },
     "Creative Writing — Constrained vs Free": {
-        "category": "Creative Writing",
-        "template_a": "Write a creative short story (exactly 3 paragraphs) about: {task}. Include a twist ending.",
-        "template_b": "Write a short creative piece about: {task}",
-        "example_task": "A robot who discovers it can dream",
+        "category"    : "Creative Writing",
+        "template_a"  : "Write a 3-paragraph short story about: {task}. End with a surprising twist.",
+        "template_b"  : "Write a creative piece about: {task}",
+        "example_task": "An AI that becomes aware it is being evaluated",
     },
-    "Structured Reasoning — Chain of Thought vs Direct": {
-        "category": "Reasoning",
-        "template_a": "Think step by step. Show your reasoning process clearly before giving a final answer. Problem: {task}",
-        "template_b": "Give the final answer only, no explanation: {task}",
-        "example_task": "If a train travels 120km in 1.5 hours, then increases speed by 20%, how long will it take to travel another 180km?",
+    "Structured Reasoning — CoT vs Direct": {
+        "category"    : "Reasoning",
+        "template_a"  : "Think step by step. Show all reasoning before your final answer: {task}",
+        "template_b"  : "Give only the final answer, no explanation: {task}",
+        "example_task": "A train travels 120 km in 1.5 hours, then increases speed by 20%. How long to cover another 180 km?",
     },
-    "Code Generation — Documented vs Minimal": {
-        "category": "Code",
-        "template_a": "Write well-documented Python code with docstrings, type hints, and inline comments for: {task}",
-        "template_b": "Write minimal Python code (no comments) for: {task}",
-        "example_task": "A function that checks if a string is a palindrome",
+    "Code — Documented vs Minimal": {
+        "category"    : "Code Generation",
+        "template_a"  : "Write well-documented Python with type hints, docstrings, and inline comments for: {task}",
+        "template_b"  : "Write minimal Python, no comments, shortest possible: {task}",
+        "example_task": "A function to check if a string is a palindrome",
     },
 }
