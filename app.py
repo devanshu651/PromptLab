@@ -40,22 +40,22 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 :root {
-    --bg:       #f8fafc;
-    --surf:     #ffffff;
-    --card:     #ffffff;
-    --border:   #e2e8f0;
-    --border-h: #cbd5e1;
-    --a:        #3b82f6;
-    --a-glow:   rgba(59,130,246,0.12);
-    --a-glow2:  rgba(59,130,246,0.05);
-    --b:        #8b5cf6;
-    --b-glow:   rgba(139,92,246,0.12);
-    --b-glow2:  rgba(139,92,246,0.05);
-    --g:        #10b981;
-    --y:        #f59e0b;
-    --text:     #0f172a;
-    --text-2:   #475569;
-    --muted:    #94a3b8;
+    --bg:       #060810;
+    --surf:     #0a0e1a;
+    --card:     #0e1422;
+    --border:   #162040;
+    --border-h: #1e2f55;
+    --a:        #60a5fa;
+    --a-glow:   rgba(96,165,250,0.15);
+    --a-glow2:  rgba(96,165,250,0.06);
+    --b:        #a78bfa;
+    --b-glow:   rgba(167,139,250,0.15);
+    --b-glow2:  rgba(167,139,250,0.06);
+    --g:        #34d399;
+    --y:        #fbbf24;
+    --text:     #e2e8f0;
+    --text-2:   #94a3b8;
+    --muted:    #475569;
 }
 
 /* ── Base ── */
@@ -66,8 +66,8 @@ html, body, [class*="css"] {
 }
 .stApp {
     background:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(59,130,246,0.06) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(139,92,246,0.05) 0%, transparent 60%),
+        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(96,165,250,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(167,139,250,0.07) 0%, transparent 60%),
         var(--bg) !important;
 }
 
@@ -93,8 +93,8 @@ html, body, [class*="css"] {
     position: absolute;
     bottom: 0; left: 0; right: 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, #3b82f6, #8b5cf6, transparent);
-    opacity: 0.3;
+    background: linear-gradient(90deg, transparent, #60a5fa, #a78bfa, transparent);
+    opacity: 0.4;
 }
 .plp-eyebrow {
     font-family: 'JetBrains Mono', monospace;
@@ -111,13 +111,13 @@ html, body, [class*="css"] {
     font-weight: 700;
     letter-spacing: -1.5px;
     margin: 0 0 0.5rem 0;
-    background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+    background: linear-gradient(135deg, #e2e8f0 0%, #94a3b8 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     line-height: 1.1;
 }
 .plp-title span {
-    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
@@ -145,7 +145,7 @@ html, body, [class*="css"] {
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+    background: linear-gradient(90deg, transparent, #60a5fa, transparent);
     opacity: 0.5;
 }
 .stat-item { text-align: center; flex: 1; }
@@ -206,15 +206,15 @@ html, body, [class*="css"] {
 }
 .card:hover {
     border-color: var(--border-h);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    box-shadow: 0 0 30px rgba(96,165,250,0.04);
 }
 .card.glow-a {
-    border-color: rgba(59,130,246,0.3);
-    box-shadow: 0 4px 24px rgba(59,130,246,0.08), inset 0 1px 0 rgba(59,130,246,0.08);
+    border-color: rgba(96,165,250,0.25);
+    box-shadow: 0 0 40px rgba(96,165,250,0.07), inset 0 1px 0 rgba(96,165,250,0.1);
 }
 .card.glow-b {
-    border-color: rgba(139,92,246,0.3);
-    box-shadow: 0 4px 24px rgba(139,92,246,0.08), inset 0 1px 0 rgba(139,92,246,0.08);
+    border-color: rgba(167,139,250,0.25);
+    box-shadow: 0 0 40px rgba(167,139,250,0.07), inset 0 1px 0 rgba(167,139,250,0.1);
 }
 
 /* ── Response cards ── */
@@ -234,14 +234,14 @@ html, body, [class*="css"] {
 }
 .resp:hover {
     border-left-color: var(--a);
-    box-shadow: -4px 0 16px rgba(59,130,246,0.12), 0 4px 16px rgba(0,0,0,0.06);
+    box-shadow: -4px 0 20px rgba(96,165,250,0.15), 0 4px 20px rgba(0,0,0,0.3);
 }
 .resp.b {
     border-left-color: var(--b);
 }
 .resp.b:hover {
     border-left-color: var(--b);
-    box-shadow: -4px 0 16px rgba(139,92,246,0.12), 0 4px 16px rgba(0,0,0,0.06);
+    box-shadow: -4px 0 20px rgba(167,139,250,0.15), 0 4px 20px rgba(0,0,0,0.3);
 }
 .resp.err { border-left-color: #ef4444; opacity: .7; }
 .resp.outlier {
@@ -294,7 +294,7 @@ html, body, [class*="css"] {
 .mbox:hover {
     border-color: var(--border-h);
     transform: translateY(-1px);
-    box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.3);
 }
 .mval {
     font-family: 'JetBrains Mono', monospace;
@@ -352,8 +352,8 @@ html, body, [class*="css"] {
 
 /* ── Why box ── */
 .why-box {
-    background: rgba(59,130,246,0.04);
-    border: 1px solid rgba(59,130,246,0.15);
+    background: rgba(96,165,250,0.05);
+    border: 1px solid rgba(96,165,250,0.15);
     border-radius: 12px;
     padding: 1.4rem;
     font-size: 0.82rem;
@@ -367,7 +367,7 @@ html, body, [class*="css"] {
 .stButton > button {
     background: linear-gradient(135deg, #3b82f6 0%, #6366f1 50%, #8b5cf6 100%) !important;
     background-size: 200% 200% !important;
-    color: #ffffff !important;
+    color: #060810 !important;
     border: none !important;
     border-radius: 10px !important;
     font-family: 'Inter', sans-serif !important;
@@ -377,12 +377,12 @@ html, body, [class*="css"] {
     width: 100% !important;
     letter-spacing: 0.3px !important;
     animation: gradShift 4s ease infinite !important;
-    box-shadow: 0 4px 20px rgba(59,130,246,0.25) !important;
+    box-shadow: 0 4px 20px rgba(96,165,250,0.3) !important;
     transition: transform 0.15s, box-shadow 0.15s !important;
 }
 .stButton > button:hover {
     transform: translateY(-1px) !important;
-    box-shadow: 0 8px 30px rgba(59,130,246,0.3) !important;
+    box-shadow: 0 8px 30px rgba(96,165,250,0.35) !important;
 }
 @keyframes gradShift {
     0%   { background-position: 0% 50%; }
@@ -408,13 +408,13 @@ html, body, [class*="css"] {
 }
 .stTextArea textarea:focus, .stTextInput input:focus {
     border-color: var(--a) !important;
-    box-shadow: 0 0 0 3px rgba(59,130,246,0.15) !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,0.2) !important;
     outline: none !important;
 }
 
 /* ── Sidebar ── */
 section[data-testid="stSidebar"] {
-    background: #f1f5f9 !important;
+    background: #080c18 !important;
     border-right: 1px solid var(--border) !important;
 }
 
