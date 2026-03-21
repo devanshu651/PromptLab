@@ -203,9 +203,9 @@ OPENROUTER_API_KEY = "your_key_here"
 
 <br/>
 
-**Built by [Devanshu Dipak Raut](https://github.com/devanshu651)**
+**Built by [Devanshu Raut](https://github.com/devanshu651)**
 
-*10-week Prompt Engineering Internship — EduSkills Academy*
+
 
 <br/>
 
