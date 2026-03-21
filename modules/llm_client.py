@@ -46,7 +46,8 @@ def call_llm(
             kwargs["response_format"] = {"type": "json_object"}
 
         resp  = client.chat.completions.create(**kwargs)
-        text  = resp.choices[0].message.content.strip()
+        raw   = resp.choices[0].message.content
+        text  = raw.strip() if raw else "[Empty response from model]"
         usage = resp.usage
         return {
             "text"              : text,
