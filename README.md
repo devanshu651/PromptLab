@@ -111,33 +111,6 @@ promptlab/
 
 ---
 
-## 🚀 Quick Start
-
-### 1. Clone the repo
-```bash
-git clone https://github.com/devanshu651/PromptLab.git
-cd PromptLab
-```
-
-### 2. Install dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Set up API key
-Create a `.env` file:
-```
-OPENROUTER_API_KEY=your_key_here
-```
-Get a free key at [openrouter.ai](https://openrouter.ai) — no credit card required.
-
-### 4. Run
-```bash
-streamlit run app.py
-```
-
----
-
 ## 🧪 Experiment Modes
 
 | Mode | Use Case |
